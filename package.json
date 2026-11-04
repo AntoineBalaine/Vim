@@ -36,7 +36,10 @@
   "extensionKind": [
     "ui"
   ],
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/actions/**/*",
+    "./src/textobject/**/*"
+  ],
   "activationEvents": [
     "onStartupFinished",
     "onCommand:type"
