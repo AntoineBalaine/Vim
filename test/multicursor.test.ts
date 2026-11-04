@@ -1,5 +1,7 @@
 import * as assert from 'assert';
+import * as vscode from 'vscode';
 import { getAndUpdateModeHandler } from '../extension';
+import { Mode } from '../src/mode/mode';
 import { ModeHandler } from '../src/mode/modeHandler';
 import { newTest, newTestSkip } from './testSimplifier';
 import { assertEqualLines, setupWorkspace } from './testUtils';
@@ -273,5 +275,104 @@ suite('Multicursor selections', () => {
     start: ['|this is a test', '1', '2', 'this is another test', '1', '2', '3', '4', '5'],
     keysPressed: 'gbgb<Esc>Vjjj<Esc><Esc>gg afd',
     end: ['| is a test', '1', '2', 'this is another test', '1', '2', '3', '4', '5'],
+  });
+});
+
+suite('Multicursor ex commands', () => {
+  let modeHandler: ModeHandler;
+
+  setup(async () => {
+    await setupWorkspace();
+    modeHandler = (await getAndUpdateModeHandler())!;
+  });
+
+  suite('Ex commands act inside every selected region', () => {
+    // Because another extension sets the selections through the editor API, we do the same here,
+    // and then wait until VSCodeVim has entered Visual mode with one cursor per selection.
+    const selectRegions = async (
+      ranges: Array<[number, number, number, number]>,
+    ): Promise<void> => {
+      const editor = vscode.window.activeTextEditor!;
+      editor.selections = ranges.map(
+        ([l1, c1, l2, c2]) =>
+          new vscode.Selection(new vscode.Position(l1, c1), new vscode.Position(l2, c2)),
+      );
+      for (let attempt = 0; attempt < 40; attempt++) {
+        if (
+          modeHandler.vimState.currentMode === Mode.Visual &&
+          modeHandler.vimState.cursors.length === ranges.length
+        ) {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      assert.fail('VSCodeVim did not enter Visual mode with one cursor per selection');
+    };
+
+    const content = ['aXa aXa', 'bXb', 'aXa aXa'];
+    // the first "aXa" of line 0, and the second "aXa" of line 2
+    const regions: Array<[number, number, number, number]> = [
+      [0, 0, 0, 3],
+      [2, 4, 2, 7],
+    ];
+
+    test(":'<,'>s only replaces inside the selected regions", async () => {
+      await setupWorkspace({ fileContent: content });
+      await selectRegions(regions);
+      await modeHandler.handleMultipleKeyEvents([':', ...'s/X/y/g'.split(''), '\n']);
+      assertEqualLines(['aya aXa', 'bXb', 'aXa aya']);
+      assert.strictEqual(modeHandler.vimState.visualRegions, undefined);
+    });
+
+    test(":'<,'>s without the g flag replaces the first match of each region", async () => {
+      await setupWorkspace({ fileContent: ['XaX XaX', 'bXb', 'XaX XaX'] });
+      await selectRegions([
+        [0, 0, 0, 3],
+        [2, 4, 2, 7],
+      ]);
+      await modeHandler.handleMultipleKeyEvents([':', ...'s/X/y/'.split(''), '\n']);
+      // Because Vim replaces one match per line, we get the first match of each line, inside its region
+      assertEqualLines(['yaX XaX', 'bXb', 'XaX yaX']);
+    });
+
+    test('\\%V only matches inside the selected regions', async () => {
+      await setupWorkspace({ fileContent: content });
+      await selectRegions(regions);
+      await modeHandler.handleMultipleKeyEvents([':', ...'s/\\%VX/y/g'.split(''), '\n']);
+      assertEqualLines(['aya aXa', 'bXb', 'aXa aya']);
+    });
+
+    test('an explicit line range is not narrowed by the regions', async () => {
+      await setupWorkspace({ fileContent: content });
+      await selectRegions(regions);
+      // Because the command line starts with `'<,'>`, we delete those five characters to type `%` instead
+      await modeHandler.handleMultipleKeyEvents([
+        ':',
+        '<BS>',
+        '<BS>',
+        '<BS>',
+        '<BS>',
+        '<BS>',
+        ...'%s/X/y/g'.split(''),
+        '\n',
+      ]);
+      assertEqualLines(['aya aya', 'byb', 'aya aya']);
+    });
+
+    test('a single selection keeps the usual line-wise behavior', async () => {
+      await setupWorkspace({ fileContent: content });
+      await selectRegions([[0, 0, 0, 3]]).catch(() => undefined);
+      await modeHandler.handleMultipleKeyEvents([
+        '<Esc>',
+        'g',
+        'g',
+        'v',
+        'j',
+        ':',
+        ...'s/X/y/g'.split(''),
+        '\n',
+      ]);
+      assertEqualLines(['aya aya', 'byb', 'aXa aXa']);
+    });
   });
 });
