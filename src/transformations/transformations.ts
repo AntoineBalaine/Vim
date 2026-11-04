@@ -1,4 +1,4 @@
-import { Position, Range, TextDocumentContentChangeEvent } from 'vscode';
+import { Position, Range, TextDocument, TextDocumentContentChangeEvent } from 'vscode';
 import { RecordedState } from '../state/recordedState';
 import { LineRange } from '../vimscript/lineRange';
 import { PositionDiff } from './../common/motion/position';
@@ -257,6 +257,92 @@ const getRangeFromTextTransformation = (transformation: TextTransformations): Ra
   // eslint-disable-next-line @typescript-eslint/restrict-plus-operands
   throw new Error('Unhandled text transformation: ' + transformation);
 };
+
+/**
+ * Because several cursors can delete neighbouring lines, their deletions can overlap: for instance, a cursor on the
+ * last line of the document deletes the newline that comes before its line, and the cursor above already deletes that
+ * newline together with its own line. Applying overlapping edits one by one, with ranges that were computed before
+ * any of them ran, deletes the wrong text or misses lines, because each deletion moves the text that follows.
+ *
+ * We therefore join the deletions that overlap into one. Because every cursor still needs its position adjusted
+ * after the edit, the position diff of a deletion that was absorbed is kept as a transformation that moves the cursor.
+ *
+ * Because deleting the last lines of a document removes the newline before them, and the joined range may start at the
+ * beginning of its first line, we move the start of the block of touching deletions that reaches the end of the document
+ * back to the end of the previous line, when one of the joined deletions did so. The result is then the one that a single
+ * cursor gives.
+ *
+ * Returns the transformations unchanged when no deletion overlaps another.
+ */
+export function mergeOverlappingDeletions(
+  transformations: TextTransformations[],
+  document: TextDocument,
+): TextTransformations[] {
+  const deletions = transformations.filter(
+    (t): t is DeleteTextRangeTransformation => t.type === 'deleteRange',
+  );
+  if (deletions.length < 2) {
+    return transformations;
+  }
+
+  const sorted = [...deletions].sort(
+    (a, b) => a.range.start.compareTo(b.range.start) || a.range.end.compareTo(b.range.end),
+  );
+  const startsAtLineEnd = (deletion: DeleteTextRangeTransformation): boolean =>
+    deletion.range.start.character === document.lineAt(deletion.range.start.line).text.length;
+
+  const merged: DeleteTextRangeTransformation[] = [];
+  const joinedStartsAtLineEnd: boolean[] = [];
+  const absorbed: MoveCursorTransformation[] = [];
+  for (const deletion of sorted) {
+    const previous = merged[merged.length - 1];
+    if (previous !== undefined && deletion.range.start.isBefore(previous.range.end)) {
+      if (deletion.range.end.isAfter(previous.range.end)) {
+        previous.range = new Range(previous.range.start, deletion.range.end);
+      }
+      joinedStartsAtLineEnd[merged.length - 1] ||= startsAtLineEnd(deletion);
+      if (deletion.diff !== undefined) {
+        absorbed.push({
+          type: 'moveCursor',
+          diff: deletion.diff,
+          cursorIndex: deletion.cursorIndex,
+        });
+      }
+    } else {
+      merged.push({ ...deletion });
+      joinedStartsAtLineEnd.push(startsAtLineEnd(deletion));
+    }
+  }
+
+  if (merged.length === deletions.length) {
+    return transformations;
+  }
+
+  // Because the last lines of the document go together with the newline before them, we look at the block of deletions
+  // that touch one another and reach the end of the document, and we take the newline that precedes the block.
+  const documentEnd = document.lineAt(document.lineCount - 1).range.end;
+  let blockStart = merged.length - 1;
+  if (
+    joinedStartsAtLineEnd[blockStart] &&
+    merged[blockStart].range.end.isAfterOrEqual(documentEnd)
+  ) {
+    while (
+      blockStart > 0 &&
+      merged[blockStart - 1].range.end.isEqual(merged[blockStart].range.start)
+    ) {
+      blockStart--;
+    }
+    const first = merged[blockStart];
+    if (first.range.start.character === 0 && first.range.start.line > 0) {
+      first.range = new Range(
+        document.lineAt(first.range.start.line - 1).range.end,
+        first.range.end,
+      );
+    }
+  }
+
+  return [...transformations.filter((t) => t.type !== 'deleteRange'), ...merged, ...absorbed];
+}
 
 export function overlappingTransformations(
   transformations: TextTransformations[],

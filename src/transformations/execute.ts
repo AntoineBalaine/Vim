@@ -23,6 +23,7 @@ import {
   areAllSameTransformation,
   isMultiCursorTextTransformation,
   isTextTransformation,
+  mergeOverlappingDeletions,
   overlappingTransformations,
 } from './transformations';
 import { Transformer } from './transformer';
@@ -48,8 +49,10 @@ export async function executeTransformations(
 
   const vimState = modeHandler.vimState;
 
-  const textTransformations = transformations.filter((x): x is TextTransformations =>
-    isTextTransformation(x),
+  // Because neighbouring cursors can delete overlapping ranges, those deletions are joined before anything is applied.
+  const textTransformations = mergeOverlappingDeletions(
+    transformations.filter((x): x is TextTransformations => isTextTransformation(x)),
+    vimState.document,
   );
   const multicursorTextTransformations: InsertTextVSCodeTransformation[] = transformations.filter(
     (x): x is InsertTextVSCodeTransformation => isMultiCursorTextTransformation(x),

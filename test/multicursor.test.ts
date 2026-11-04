@@ -365,6 +365,54 @@ suite('Multicursor ex commands', () => {
       assertEqualLines(['aya aya', 'byb', 'aya aya']);
     });
 
+    test('D in Visual mode deletes the neighbouring lines that several selections cover, including the last line', async () => {
+      await openContent(['keep 1', 'a1', 'a2', 'a3', 'keep 2', 'b1', 'b2', 'b3']);
+      await selectRegions([
+        [1, 0, 1, 2],
+        [2, 0, 2, 2],
+        [3, 0, 3, 2],
+        [5, 0, 5, 2],
+        [6, 0, 6, 2],
+        [7, 0, 7, 2],
+      ]);
+      await modeHandler.handleMultipleKeyEvents(['D']);
+      // Because the cursors on b1, b2 and b3 delete neighbouring lines, their deletions overlap, and every selected line must still go.
+      assertEqualLines(['keep 1', 'keep 2']);
+    });
+
+    test('D in Visual mode deletes the lines of selections that reach the first character of the next line', async () => {
+      await openContent(['keep 1', 'a1', 'a2', '%', 'keep 2', 'b1', 'b2', '%']);
+      await selectRegions([
+        [1, 0, 1, 2],
+        [2, 0, 3, 1],
+        [5, 0, 5, 2],
+        [6, 0, 7, 1],
+      ]);
+      await modeHandler.handleMultipleKeyEvents(['D']);
+      assertEqualLines(['keep 1', 'keep 2']);
+    });
+
+    test('D in Visual mode deletes the selected lines that are not neighbours, and keeps the others', async () => {
+      await openContent(['x', 'a', 'y', 'b', 'z']);
+      await selectRegions([
+        [1, 0, 1, 1],
+        [3, 0, 3, 1],
+      ]);
+      await modeHandler.handleMultipleKeyEvents(['D']);
+      assertEqualLines(['x', 'y', 'z']);
+    });
+
+    test('D in Visual mode deletes neighbouring lines in the middle of the document', async () => {
+      await openContent(['x', 'a1', 'a2', 'a3', 'y']);
+      await selectRegions([
+        [1, 0, 1, 2],
+        [2, 0, 2, 2],
+        [3, 0, 3, 2],
+      ]);
+      await modeHandler.handleMultipleKeyEvents(['D']);
+      assertEqualLines(['x', 'y']);
+    });
+
     test('a single selection keeps the usual line-wise behavior', async () => {
       await openContent(content);
       await selectRegions([[0, 0, 0, 3]]).catch(() => undefined);
