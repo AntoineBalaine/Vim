@@ -289,6 +289,12 @@ suite('Multicursor ex commands', () => {
   suite('Ex commands act inside every selected region', () => {
     // Because another extension sets the selections through the editor API, we do the same here,
     // and then wait until VSCodeVim has entered Visual mode with one cursor per selection.
+    // Because `setupWorkspace` opens a new document, we fetch the mode handler of that document afterwards.
+    const openContent = async (lines: string[]): Promise<void> => {
+      await setupWorkspace({ fileContent: lines });
+      modeHandler = (await getAndUpdateModeHandler())!;
+    };
+
     const selectRegions = async (
       ranges: Array<[number, number, number, number]>,
     ): Promise<void> => {
@@ -317,7 +323,7 @@ suite('Multicursor ex commands', () => {
     ];
 
     test(":'<,'>s only replaces inside the selected regions", async () => {
-      await setupWorkspace({ fileContent: content });
+      await openContent(content);
       await selectRegions(regions);
       await modeHandler.handleMultipleKeyEvents([':', ...'s/X/y/g'.split(''), '\n']);
       assertEqualLines(['aya aXa', 'bXb', 'aXa aya']);
@@ -325,7 +331,7 @@ suite('Multicursor ex commands', () => {
     });
 
     test(":'<,'>s without the g flag replaces the first match of each region", async () => {
-      await setupWorkspace({ fileContent: ['XaX XaX', 'bXb', 'XaX XaX'] });
+      await openContent(['XaX XaX', 'bXb', 'XaX XaX']);
       await selectRegions([
         [0, 0, 0, 3],
         [2, 4, 2, 7],
@@ -336,14 +342,14 @@ suite('Multicursor ex commands', () => {
     });
 
     test('\\%V only matches inside the selected regions', async () => {
-      await setupWorkspace({ fileContent: content });
+      await openContent(content);
       await selectRegions(regions);
       await modeHandler.handleMultipleKeyEvents([':', ...'s/\\%VX/y/g'.split(''), '\n']);
       assertEqualLines(['aya aXa', 'bXb', 'aXa aya']);
     });
 
     test('an explicit line range is not narrowed by the regions', async () => {
-      await setupWorkspace({ fileContent: content });
+      await openContent(content);
       await selectRegions(regions);
       // Because the command line starts with `'<,'>`, we delete those five characters to type `%` instead
       await modeHandler.handleMultipleKeyEvents([
@@ -360,7 +366,7 @@ suite('Multicursor ex commands', () => {
     });
 
     test('a single selection keeps the usual line-wise behavior', async () => {
-      await setupWorkspace({ fileContent: content });
+      await openContent(content);
       await selectRegions([[0, 0, 0, 3]]).catch(() => undefined);
       await modeHandler.handleMultipleKeyEvents([
         '<Esc>',
