@@ -602,7 +602,14 @@ export class HistoryTracker {
   public getMark(name: string): IMark | undefined {
     // First, handle "special" marks
     let position: Position | undefined;
-    if (name === '<') {
+    const regionsSpan = this.vimState.visualRegionsSpan();
+    if (name === '<' && regionsSpan) {
+      // Because every selection counts, `'<` is the start of the first region.
+      position = regionsSpan.start;
+    } else if (name === '>' && regionsSpan) {
+      // Because every selection counts, `'>` is the last selected character of the last region.
+      position = regionsSpan.end;
+    } else if (name === '<') {
       const lvs = this.vimState.lastVisualSelection;
       const linewise = lvs?.mode === Mode.VisualLine;
       // If start is after end, prefer end (handles inverted visual selections)

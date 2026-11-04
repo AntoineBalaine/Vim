@@ -294,6 +294,9 @@ class ShowCommandLine extends BaseCommand {
       commandLineText = "'<,'>";
     }
 
+    // Because the mode is still Visual at this point, we record the selected regions before it changes.
+    vimState.captureVisualRegions();
+
     const previousMode = vimState.currentMode;
     await vimState.setCurrentMode(Mode.CommandlineInProgress);
     // TODO: Change or supplement `setCurrentMode` API so this isn't necessary

@@ -8,7 +8,7 @@ import { SurroundState } from '../actions/plugins/surround';
 import { ExCommandLine, SearchCommandLine } from '../cmd_line/commandLine';
 import { Cursor } from '../common/motion/cursor';
 import { configuration } from '../configuration/configuration';
-import { DotCommandStatus, Mode, NormalCommandState } from '../mode/mode';
+import { DotCommandStatus, Mode, NormalCommandState, isVisualMode } from '../mode/mode';
 import { ModeData } from '../mode/modeData';
 import { Logger } from '../util/logger';
 import { SearchDirection } from '../vimscript/pattern';
@@ -209,6 +209,48 @@ export class VimState implements vscode.Disposable {
         multiCursorIndexSecondaryCursorMap?: Map<number, Cursor> | undefined;
       }
     | undefined = undefined;
+
+  /**
+   * Because the marks `'<` and `'>` can describe only one region, we record here the region of
+   * every selection whenever the command line is opened from Visual mode with several selections.
+   * Ex commands such as `:s` then restrict their matches to these regions.
+   * It is `undefined` outside of such a command line, so that no other command sees stale regions.
+   */
+  public visualRegions: readonly vscode.Range[] | undefined = undefined;
+
+  /**
+   * Records the region of every selection in `visualRegions`, or clears it when the editor
+   * is not in Visual mode with at least two non-empty selections.
+   *
+   * Because the selections are exactly what is highlighted, whereas the cursor of a selection made
+   * by another extension keeps an exclusive end position, we read `editor.selections` and not the cursors.
+   */
+  public captureVisualRegions(): void {
+    const selections = this.editor.selections.filter((s) => !s.isEmpty);
+    if (
+      !isVisualMode(this.currentMode) ||
+      this.currentMode === Mode.VisualBlock ||
+      selections.length < 2
+    ) {
+      this.visualRegions = undefined;
+      return;
+    }
+    this.visualRegions = selections
+      .map((s) => new vscode.Range(s.start, s.end))
+      .sort((a, b) => a.start.compareTo(b.start));
+  }
+
+  /**
+   * Because `'<` and `'>` must cover every region, this gives the start of the first region
+   * and the last selected character of the last region, or `undefined` when there are no regions.
+   */
+  public visualRegionsSpan(): { start: Position; end: Position } | undefined {
+    if (this.visualRegions === undefined || this.visualRegions.length === 0) {
+      return undefined;
+    }
+    const last = this.visualRegions[this.visualRegions.length - 1];
+    return { start: this.visualRegions[0].start, end: last.end.getLeft() };
+  }
 
   /**
    * The current mode and its associated state.

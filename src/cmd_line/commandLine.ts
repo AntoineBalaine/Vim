@@ -306,11 +306,16 @@ export class ExCommandLine extends CommandLine {
       }
     }
 
+    // Because the recorded regions belong to this command line only, we clear them once it has run.
+    vimState.visualRegions = undefined;
+
     // Update state if this command is repeatable via dot command.
     vimState.lastCommandDotRepeatable = this.command?.isRepeatableWithDot ?? false;
   }
 
   public async escape(vimState: VimState): Promise<void> {
+    // Because the recorded regions belong to this command line only, we clear them when it is cancelled.
+    vimState.visualRegions = undefined;
     await vimState.setCurrentMode(Mode.Normal);
     if (this.text.length > 0) {
       void ExCommandLine.history.add(this.text);

@@ -139,10 +139,9 @@ export class Address {
         case 'entire_file':
           return vimState.document.lineCount - 1;
         case 'last_visual_range':
-          const res =
-            side === 'left'
-              ? vimState.lastVisualSelection?.start.line
-              : vimState.lastVisualSelection?.end.line;
+          const regionsSpan = vimState.visualRegionsSpan();
+          const visualRange = regionsSpan ?? vimState.lastVisualSelection;
+          const res = side === 'left' ? visualRange?.start.line : visualRange?.end.line;
           if (res === undefined) {
             throw VimError.MarkNotSet();
           }
@@ -294,6 +293,19 @@ export class LineRange {
     }),
   );
 
+  /**
+   * Because `:'<,'>` and `:*` both mean "the visual selection", this tells whether
+   * the range is one of them, which decides whether the selected regions narrow a command.
+   */
+  public isVisualRange(): boolean {
+    const isVisualMark = (address: Address | undefined, mark: string): boolean =>
+      address?.specifier.type === 'mark' && address.specifier.mark === mark;
+    if (this.end === undefined) {
+      return this.start.specifier.type === 'last_visual_range';
+    }
+    return isVisualMark(this.start, '<') && isVisualMark(this.end, '>');
+  }
+
   public resolve(vimState: VimState): { start: number; end: number } {
     // TODO: *,4 is not a valid range
     const end = this.end ?? this.start;
@@ -301,12 +313,13 @@ export class LineRange {
     if (end.specifier.type === 'entire_file') {
       return { start: 0, end: vimState.document.lineCount - 1 };
     } else if (end.specifier.type === 'last_visual_range') {
-      if (vimState.lastVisualSelection === undefined) {
+      const visualRange = vimState.visualRegionsSpan() ?? vimState.lastVisualSelection;
+      if (visualRange === undefined) {
         throw VimError.MarkNotSet();
       }
       return {
-        start: vimState.lastVisualSelection.start.line,
-        end: vimState.lastVisualSelection.end.line,
+        start: visualRange.start.line,
+        end: visualRange.end.line,
       };
     }
 

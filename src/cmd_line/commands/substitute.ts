@@ -305,6 +305,24 @@ const countParser: Parser<number | undefined> = optWhitespace
  *   - update replacement state
  *   - update search state too!
  */
+/**
+ * Because the user selected several regions and asked for the visual range (`:'<,'>` or `:*`), or used `\%V`,
+ * we keep only the matches that lie inside one of the regions, and drop the other matches on the lines between them.
+ * Without regions, or with any other range such as `:%`, the matches stay as they are.
+ */
+function restrictToVisualRegions(
+  vimState: VimState,
+  lineRange: LineRange,
+  pattern: Pattern,
+  matches: PatternMatch[],
+): PatternMatch[] {
+  const regions = vimState.visualRegions;
+  if (regions === undefined || !(lineRange.isVisualRange() || pattern.inSelection)) {
+    return matches;
+  }
+  return matches.filter((match) => regions.some((region) => region.contains(match.range)));
+}
+
 export class SubstituteCommand extends ExCommand {
   public static readonly argParser: Parser<SubstituteCommand> = optWhitespace.then(
     alt(
@@ -369,7 +387,12 @@ export class SubstituteCommand extends ExCommand {
 
     let matches: PatternMatch[] = [];
     if (pattern?.patternString) {
-      matches = pattern.allMatches(vimState, { lineRange });
+      matches = restrictToVisualRegions(
+        vimState,
+        lineRange,
+        pattern,
+        pattern.allMatches(vimState, { lineRange }),
+      );
     }
 
     const global =
@@ -567,14 +590,21 @@ export class SubstituteCommand extends ExCommand {
 
     // TODO: `allMatches` lies for patterns with empty branches, which makes this wrong (not that anyone cares)
     const allMatches =
-      pattern?.allMatches(vimState, {
-        // TODO: This method should probably take start/end lines as numbers
-        lineRange: new LineRange(
-          new Address({ type: 'number', num: start + 1 }),
-          ',',
-          new Address({ type: 'number', num: end + 1 }),
-        ),
-      }) ?? [];
+      pattern === undefined
+        ? []
+        : restrictToVisualRegions(
+            vimState,
+            lineRange,
+            pattern,
+            pattern.allMatches(vimState, {
+              // TODO: This method should probably take start/end lines as numbers
+              lineRange: new LineRange(
+                new Address({ type: 'number', num: start + 1 }),
+                ',',
+                new Address({ type: 'number', num: end + 1 }),
+              ),
+            }),
+          );
 
     let replaceableMatches;
     if (global) {

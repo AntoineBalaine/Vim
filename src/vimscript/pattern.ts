@@ -88,6 +88,34 @@ export class Pattern {
       ];
     }
 
+    // Because `\%V` must cover every selected region, we search each region on its own and join the matches.
+    if (this.inSelection && vimState.visualRegions !== undefined) {
+      return vimState.visualRegions.flatMap((selectedRegion) =>
+        this.allMatchesInRegion(vimState, args, selectedRegion),
+      );
+    }
+
+    const region =
+      this.inSelection && vimState.lastVisualSelection
+        ? new Range(vimState.lastVisualSelection.start, vimState.lastVisualSelection.end)
+        : undefined;
+    return this.allMatchesInRegion(vimState, args, region);
+  }
+
+  /**
+   * Finds the matches inside `searchRange`, or inside the whole document when `searchRange` is `undefined`.
+   */
+  private allMatchesInRegion(
+    vimState: VimState,
+    args:
+      | {
+          fromPosition: Position;
+        }
+      | {
+          lineRange: LineRange;
+        },
+    searchRange: Range | undefined,
+  ): PatternMatch[] {
     let fromPosition: Position;
     let lineRange:
       | {
@@ -106,14 +134,10 @@ export class Pattern {
     let haystack: string;
     let searchOffset: number;
     let startOffset: number;
-    if (this.inSelection && vimState.lastVisualSelection) {
+    if (searchRange) {
       // TODO: This is not exactly how Vim implements in-selection search (\%V), see :help \%V for more info.
-      const searchRange = new Range(
-        vimState.lastVisualSelection.start,
-        vimState.lastVisualSelection.end,
-      );
       haystack = vimState.document.getText(searchRange);
-      searchOffset = vimState.document.offsetAt(vimState.lastVisualSelection.start);
+      searchOffset = vimState.document.offsetAt(searchRange.start);
       startOffset = searchRange.contains(fromPosition)
         ? vimState.document.offsetAt(fromPosition) - searchOffset
         : 0;
