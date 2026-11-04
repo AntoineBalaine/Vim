@@ -1,5 +1,5 @@
-import { Cursor } from 'src/common/motion/cursor';
 import { Position } from 'vscode';
+import { Cursor } from '../../common/motion/cursor';
 import { Mode } from '../../mode/mode';
 import { VimState } from '../../state/vimState';
 import { BaseCommand, RegisterAction } from '../base';
