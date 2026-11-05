@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { Position } from 'vscode';
 import { ExCommandLine } from '../cmd_line/commandLine';
 import { Cursor } from '../common/motion/cursor';
 import { PositionDiff } from '../common/motion/position';
@@ -37,6 +38,43 @@ export interface IModeHandler {
   handleMultipleKeyEvents(keys: string[]): Promise<void>;
   handleKeyEvent(key: string): Promise<void>;
   rerunRecordedState(transformation: Dot): Promise<void>;
+}
+
+/**
+ * Because the exact cursor positions of a multi-cursor command are computed before any edit is applied, the text that
+ * the edits of the other cursors add or remove above a position moves the line that the position must point at.
+ * This counts those lines for the cursor that has the given index. The edits of the cursor itself are not counted,
+ * because its own position already accounts for them.
+ */
+export function linesAddedAbove(
+  position: Position,
+  cursorIndex: number,
+  transformations: readonly TextTransformations[],
+): number {
+  let lines = 0;
+  for (const t of transformations) {
+    if (t.cursorIndex === cursorIndex) {
+      continue;
+    }
+    switch (t.type) {
+      case 'insertText':
+        if (t.position.isBefore(position)) {
+          lines += t.text.split('\n').length - 1;
+        }
+        break;
+      case 'replaceText':
+        if (t.range.end.isBeforeOrEqual(position)) {
+          lines += t.text.split('\n').length - 1 - (t.range.end.line - t.range.start.line);
+        }
+        break;
+      case 'deleteRange':
+        if (t.range.end.isBeforeOrEqual(position)) {
+          lines -= t.range.end.line - t.range.start.line;
+        }
+        break;
+    }
+  }
+  return lines;
 }
 
 export async function executeTransformations(
@@ -282,6 +320,12 @@ export async function executeTransformations(
   if (vimState.currentMode !== Mode.VisualBlock && !manuallySetCursorPositions) {
     vimState.cursors = selections.map((sel, idx) => {
       const diffs = accumulatedPositionDifferences[idx] ?? [];
+      for (let d = 0; d < diffs.length; d++) {
+        if (diffs[d].isExactPosition()) {
+          const target = new Position(diffs[d].line, diffs[d].character);
+          diffs[d] = diffs[d].shiftedByLines(linesAddedAbove(target, idx, textTransformations));
+        }
+      }
       if (vimState.recordedState.operatorPositionDiff) {
         diffs.push(vimState.recordedState.operatorPositionDiff);
       }

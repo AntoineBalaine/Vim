@@ -429,4 +429,62 @@ suite('Multicursor ex commands', () => {
       assertEqualLines(['aya aya', 'byb', 'aXa aXa']);
     });
   });
+
+  suite('Opening and pasting lines with one cursor per line', () => {
+    const lines = ['l0 aaa', 'l1 bbb', 'l2 ccc', 'l3 ddd', 'END'];
+    const cursorLines = [0, 1, 3];
+
+    // Because another extension sets the selections through the editor API, we do the same here.
+    const openWithCursors = async (): Promise<void> => {
+      await setupWorkspace({ fileContent: lines });
+      modeHandler = (await getAndUpdateModeHandler())!;
+      vscode.window.activeTextEditor!.selections = cursorLines.map(
+        (line) => new vscode.Selection(new vscode.Position(line, 0), new vscode.Position(line, 0)),
+      );
+      for (let attempt = 0; attempt < 40; attempt++) {
+        if (modeHandler.vimState.cursors.length === cursorLines.length) {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      assert.fail('VSCodeVim did not create one cursor per selection');
+    };
+
+    test('o opens a line below every cursor, types in all of them, and keeps the cursors on <Esc>', async () => {
+      await openWithCursors();
+      await modeHandler.handleMultipleKeyEvents(['o', 'x', 'y', '<Esc>']);
+      assertEqualLines(['l0 aaa', 'xy', 'l1 bbb', 'xy', 'l2 ccc', 'l3 ddd', 'xy', 'END']);
+      assert.deepStrictEqual(
+        modeHandler.vimState.cursors.map((c) => c.stop.line),
+        [1, 3, 6],
+      );
+    });
+
+    test('O opens a line above every cursor and keeps the cursors on <Esc>', async () => {
+      await openWithCursors();
+      await modeHandler.handleMultipleKeyEvents(['O', 'x', '<Esc>']);
+      assertEqualLines(['x', 'l0 aaa', 'x', 'l1 bbb', 'l2 ccc', 'x', 'l3 ddd', 'END']);
+      assert.strictEqual(modeHandler.vimState.cursors.length, 3);
+    });
+
+    test('Vyp puts each cursor line below itself, and the cursors end on the pasted lines', async () => {
+      await openWithCursors();
+      await modeHandler.handleMultipleKeyEvents(['V', 'y', 'p']);
+      assertEqualLines([
+        'l0 aaa',
+        'l0 aaa',
+        'l1 bbb',
+        'l1 bbb',
+        'l2 ccc',
+        'l3 ddd',
+        'l3 ddd',
+        'END',
+      ]);
+      // Because the pastes of the cursors above push the lines down, each cursor must account for them.
+      assert.deepStrictEqual(
+        modeHandler.vimState.cursors.map((c) => c.stop.line),
+        [1, 3, 6],
+      );
+    });
+  });
 });

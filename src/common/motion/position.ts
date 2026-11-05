@@ -80,6 +80,22 @@ export class PositionDiff {
     return new PositionDiff(PositionDiffType.ExactCharacter, lineOffset ?? 0, character);
   }
 
+  /** Because an exact position does not move with the edits, the callers need to know which diffs are exact ones. */
+  public isExactPosition(): boolean {
+    return this.type === PositionDiffType.ExactPosition;
+  }
+
+  /**
+   * Because an exact position is written in the coordinates of the document before the edits, the lines that the
+   * edits of the other cursors add or remove above it move it, and this gives the diff that points at the moved position.
+   * The other kinds of diffs are relative to the cursor, which VS Code already moves, so they are returned as they are.
+   */
+  public shiftedByLines(lineDelta: number): PositionDiff {
+    return this.type === PositionDiffType.ExactPosition && lineDelta !== 0
+      ? new PositionDiff(PositionDiffType.ExactPosition, this.line + lineDelta, this.character)
+      : this;
+  }
+
   public toString(): string {
     switch (this.type) {
       case PositionDiffType.Offset:

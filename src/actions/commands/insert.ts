@@ -127,6 +127,7 @@ class InsertAbove extends BaseCommand {
 
   public override async execCount(position: Position, vimState: VimState): Promise<void> {
     await vimState.setCurrentMode(Mode.Insert);
+    const wasMultiCursor = vimState.isMultiCursor;
     const count = vimState.recordedState.count || 1;
 
     const charPos = position.getLineBeginRespectingIndent(vimState.document).character;
@@ -136,6 +137,10 @@ class InsertAbove extends BaseCommand {
     }
 
     vimState.cursors = getCursorsAfterSync(vimState.editor);
+    if (wasMultiCursor) {
+      // Because the cursors were real, we keep them in their order, and <Esc> must not collapse them.
+      return;
+    }
     const endPos = vimState.cursor.start.character;
     const indentAmt = charPos - endPos;
 
@@ -179,12 +184,17 @@ class InsertBelow extends BaseCommand {
 
   public override async execCount(position: Position, vimState: VimState): Promise<void> {
     await vimState.setCurrentMode(Mode.Insert);
+    const wasMultiCursor = vimState.isMultiCursor;
     const count = vimState.recordedState.count || 1;
 
     for (let i = 0; i < count; i++) {
       await vscode.commands.executeCommand('editor.action.insertLineAfter');
     }
     vimState.cursors = getCursorsAfterSync(vimState.editor);
+    if (wasMultiCursor) {
+      // Because the cursors were real, we keep them in their order, and <Esc> must not collapse them.
+      return;
+    }
     for (let i = 1; i < count; i++) {
       const newPos = new Position(
         vimState.cursorStartPosition.line - i,
