@@ -79,6 +79,12 @@ class RestoreVisualSelection extends BaseCommand {
   modes = [Mode.Normal];
   keys = ['g', 'v'];
 
+  // Because we put back one selection for every cursor of the last Visual mode, and not only for the cursors that exist
+  // now, the command runs once and sets all the cursors itself.
+  override runsOnceForEveryCursor() {
+    return false;
+  }
+
   public override async exec(position: Position, vimState: VimState): Promise<void> {
     const lastVisualSelection = vimState.lastVisualSelection;
     if (lastVisualSelection === undefined) {
@@ -86,6 +92,15 @@ class RestoreVisualSelection extends BaseCommand {
     }
 
     let { start, end, mode } = lastVisualSelection;
+    const secondaryCursors = lastVisualSelection.multiCursorIndexSecondaryCursorMap;
+    if (
+      vimState.cursors.length === 1 &&
+      secondaryCursors !== undefined &&
+      secondaryCursors.size > 0
+    ) {
+      await this.restoreAllSelections(vimState, lastVisualSelection);
+      return;
+    }
     const isCurrentlyHandlingSecondaryCursor = this.multicursorIndex && this.multicursorIndex > 0;
     if (isCurrentlyHandlingSecondaryCursor) {
       const secondarySelection = this.getSecondarySelectionByMultiCursorIndex(
@@ -108,6 +123,35 @@ class RestoreVisualSelection extends BaseCommand {
         vimState.cursorStopPosition = end;
       }
     }
+  }
+
+  /**
+   * Because <Esc> in Normal mode collapses the cursors to one, `gv` has only one cursor left to run for,
+   * so we put back here one selection for every cursor that the last Visual mode had.
+   * Because the text can have changed since, every position is brought back inside the document.
+   */
+  async restoreAllSelections(
+    vimState: VimState,
+    lastVisualSelection: NonNullable<VimState['lastVisualSelection']>,
+  ): Promise<void> {
+    const { mode } = lastVisualSelection;
+    const selections: Cursor[] = [new Cursor(lastVisualSelection.start, lastVisualSelection.end)];
+    const secondaryCursors = lastVisualSelection.multiCursorIndexSecondaryCursorMap!;
+    for (const index of [...secondaryCursors.keys()].sort((a, b) => a - b)) {
+      selections.push(secondaryCursors.get(index)!);
+    }
+
+    const restored = selections.map((selection) => {
+      const start = vimState.document.validatePosition(selection.start);
+      let end = vimState.document.validatePosition(selection.stop);
+      if (mode === Mode.Visual && start.isBefore(end)) {
+        end = end.getLeftThroughLineBreaks(true);
+      }
+      return new Cursor(start, end);
+    });
+
+    await vimState.setCurrentMode(mode);
+    vimState.cursors = restored;
   }
 
   getSecondarySelectionByMultiCursorIndex(

@@ -487,4 +487,93 @@ suite('Multicursor ex commands', () => {
       );
     });
   });
+
+  suite('Restoring the selections of several cursors', () => {
+    const lines = ['aaa 111', 'bbb 222', 'ccc 333', 'ddd 444', 'END'];
+    const regions: Array<[number, number, number, number]> = [
+      [0, 0, 0, 3],
+      [1, 0, 1, 3],
+      [3, 4, 3, 7],
+    ];
+
+    // Because another extension sets the selections through the editor API, we do the same here.
+    const openWithSelections = async (): Promise<void> => {
+      await setupWorkspace({ fileContent: lines });
+      modeHandler = (await getAndUpdateModeHandler())!;
+      vscode.window.activeTextEditor!.selections = regions.map(
+        ([l1, c1, l2, c2]) =>
+          new vscode.Selection(new vscode.Position(l1, c1), new vscode.Position(l2, c2)),
+      );
+      for (let attempt = 0; attempt < 40; attempt++) {
+        if (
+          modeHandler.vimState.currentMode === Mode.Visual &&
+          modeHandler.vimState.cursors.length === regions.length
+        ) {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      assert.fail('VSCodeVim did not enter Visual mode with one cursor per selection');
+    };
+
+    // Because the cursors of Visual mode include the character under the stop position, the text goes one further.
+    const selectedTexts = (): string[] =>
+      modeHandler.vimState.cursors.map((cursor) => {
+        const [first, last] = cursor.start.isBefore(cursor.stop)
+          ? [cursor.start, cursor.stop]
+          : [cursor.stop, cursor.start];
+        return modeHandler.vimState.document.getText(new vscode.Range(first, last.getRight()));
+      });
+
+    test('<Esc> in Visual mode keeps the cursors, and the second <Esc> collapses them', async () => {
+      await openWithSelections();
+      await modeHandler.handleMultipleKeyEvents(['<Esc>']);
+      assert.strictEqual(modeHandler.vimState.currentMode, Mode.Normal);
+      assert.strictEqual(modeHandler.vimState.cursors.length, 3);
+      await modeHandler.handleMultipleKeyEvents(['<Esc>']);
+      assert.strictEqual(modeHandler.vimState.cursors.length, 1);
+    });
+
+    test('gv puts back every selection after the cursors were collapsed', async () => {
+      await openWithSelections();
+      const before = selectedTexts();
+      assert.strictEqual(before.length, 3);
+      await modeHandler.handleMultipleKeyEvents(['<Esc>', '<Esc>', 'g', 'v']);
+      assert.strictEqual(modeHandler.vimState.currentMode, Mode.Visual);
+      assert.strictEqual(modeHandler.vimState.cursors.length, 3);
+      assert.deepStrictEqual(selectedTexts(), before);
+    });
+
+    test('gv puts back every line after V and the collapse of the cursors', async () => {
+      await openWithSelections();
+      await modeHandler.handleMultipleKeyEvents(['V', '<Esc>', '<Esc>', 'g', 'v']);
+      assert.strictEqual(modeHandler.vimState.currentMode, Mode.VisualLine);
+      assert.deepStrictEqual(
+        modeHandler.vimState.cursors.map((c) => c.stop.line),
+        [0, 1, 3],
+      );
+    });
+
+    test('gv keeps working after the text got shorter, by bringing the selections back inside it', async () => {
+      await openWithSelections();
+      await modeHandler.handleMultipleKeyEvents(['<Esc>', '<Esc>']);
+      const editor = vscode.window.activeTextEditor!;
+      await editor.edit((edit) => edit.delete(new vscode.Range(3, 0, 5, 0)));
+      await modeHandler.handleMultipleKeyEvents(['g', 'v']);
+      assert.strictEqual(modeHandler.vimState.cursors.length, 3);
+      for (const cursor of modeHandler.vimState.cursors) {
+        assert.ok(cursor.stop.line < editor.document.lineCount);
+      }
+    });
+
+    test('gv after a single selection still restores only that selection', async () => {
+      await setupWorkspace({ fileContent: lines });
+      modeHandler = (await getAndUpdateModeHandler())!;
+      await modeHandler.handleMultipleKeyEvents(['g', 'g', 'v', 'l', 'l']);
+      const before = selectedTexts();
+      await modeHandler.handleMultipleKeyEvents(['<Esc>', 'g', 'v']);
+      assert.strictEqual(modeHandler.vimState.cursors.length, 1);
+      assert.deepStrictEqual(selectedTexts(), before);
+    });
+  });
 });

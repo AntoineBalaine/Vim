@@ -230,6 +230,12 @@ export class ModeHandler implements vscode.Disposable, IModeHandler {
         // like the plugin modes shouldn't be changed or else it might mess up the plugins actions.
         await this.setCurrentMode(Mode.Visual);
       }
+      if (isVisualMode(this.vimState.currentMode)) {
+        // Because these selections come from outside of our own actions, nothing else records them for `gv`.
+        this.vimState.lastVisualSelection = this.createLastVisualSelection(
+          this.vimState.currentMode,
+        );
+      }
       return this.updateView({ drawSelection: false, revealRange: false });
     }
 
