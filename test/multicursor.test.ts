@@ -633,4 +633,77 @@ suite('Multicursor ex commands', () => {
       assertEqualLines(['l0 aaa', 'l1 bbb', 'l2 ccc', 'l3 ddd', 'END', 'l0 aaa']);
     });
   });
+
+  suite('Selections that come from outside while in Visual Line mode', () => {
+    const lines = [
+      '[V:2] "a" X | "b" X |',
+      '[V:1] "a" C | "b" D |',
+      '[V:2] "c" X | "d" X |',
+      'END',
+    ];
+
+    const annotationRanges = (): vscode.Selection[] => {
+      const ranges: vscode.Selection[] = [];
+      lines.forEach((line, lineNumber) => {
+        if (!line.startsWith('[V:2]')) return;
+        for (const match of line.matchAll(/"[^"]*"/g)) {
+          ranges.push(
+            new vscode.Selection(
+              new vscode.Position(lineNumber, match.index),
+              new vscode.Position(lineNumber, match.index + match[0].length),
+            ),
+          );
+        }
+      });
+      return ranges;
+    };
+
+    const waitFor = async (condition: () => boolean): Promise<void> => {
+      for (let attempt = 0; attempt < 40 && !condition(); attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    };
+
+    test('several partial-line selections leave Visual Line mode, so d removes only the selected text', async () => {
+      await setupWorkspace({ fileContent: lines });
+      modeHandler = (await getAndUpdateModeHandler())!;
+      await modeHandler.handleMultipleKeyEvents(['V']);
+      assert.strictEqual(modeHandler.vimState.currentMode, Mode.VisualLine);
+
+      vscode.window.activeTextEditor!.selections = annotationRanges();
+      await waitFor(() => modeHandler.vimState.cursors.length === 4);
+      assert.strictEqual(modeHandler.vimState.currentMode, Mode.Visual);
+
+      await modeHandler.handleMultipleKeyEvents(['d']);
+      assertEqualLines(['[V:2]  X |  X |', '[V:1] "a" C | "b" D |', '[V:2]  X |  X |', 'END']);
+    });
+
+    test('a single partial-line selection leaves Visual Line mode as well', async () => {
+      await setupWorkspace({ fileContent: lines });
+      modeHandler = (await getAndUpdateModeHandler())!;
+      await modeHandler.handleMultipleKeyEvents(['V']);
+      vscode.window.activeTextEditor!.selections = [annotationRanges()[0]];
+      await waitFor(() => modeHandler.vimState.currentMode === Mode.Visual);
+      assert.strictEqual(modeHandler.vimState.currentMode, Mode.Visual);
+      await modeHandler.handleMultipleKeyEvents(['d']);
+      assertEqualLines([
+        '[V:2]  X | "b" X |',
+        '[V:1] "a" C | "b" D |',
+        '[V:2] "c" X | "d" X |',
+        'END',
+      ]);
+    });
+
+    test('selections of whole lines keep Visual Line mode', async () => {
+      await setupWorkspace({ fileContent: lines });
+      modeHandler = (await getAndUpdateModeHandler())!;
+      await modeHandler.handleMultipleKeyEvents(['V']);
+      vscode.window.activeTextEditor!.selections = [
+        new vscode.Selection(new vscode.Position(0, 0), new vscode.Position(0, lines[0].length)),
+        new vscode.Selection(new vscode.Position(2, 0), new vscode.Position(2, lines[2].length)),
+      ];
+      await waitFor(() => modeHandler.vimState.cursors.length === 2);
+      assert.strictEqual(modeHandler.vimState.currentMode, Mode.VisualLine);
+    });
+  });
 });

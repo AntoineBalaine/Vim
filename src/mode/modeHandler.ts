@@ -154,6 +154,25 @@ export class ModeHandler implements vscode.Disposable, IModeHandler {
   }
 
   /**
+   * Because Visual Line mode acts on whole lines, a selection that comes from outside (for instance from a command that
+   * selects the annotations of a voice) and covers only part of a line cannot belong to that mode: a `d` would then
+   * delete the lines of the selections, and not the selections. We tell here if a selection covers whole lines.
+   */
+  public static coversWholeLines(
+    selection: vscode.Selection,
+    document: vscode.TextDocument,
+  ): boolean {
+    const { start, end } = selection;
+    if (start.character !== 0) {
+      return false;
+    }
+    if (end.character === 0 && end.line > start.line) {
+      return true;
+    }
+    return end.character >= document.lineAt(end.line).text.length;
+  }
+
+  /**
    * This is easily the worst function in VSCodeVim.
    *
    * We need to know when VSCode has updated our selection, so that we can sync
@@ -221,6 +240,13 @@ export class ModeHandler implements vscode.Disposable, IModeHandler {
           ),
       );
       if (
+        this.vimState.currentMode === Mode.VisualLine &&
+        e.selections.some((s) => !ModeHandler.coversWholeLines(s, e.textEditor.document))
+      ) {
+        // Because these selections hold only parts of lines, Visual Line mode would act on more than they select.
+        await this.setCurrentMode(Mode.Visual);
+      }
+      if (
         e.selections.some((s) => !s.anchor.isEqual(s.active)) &&
         allowedModes.includes(this.vimState.currentMode)
       ) {
@@ -252,6 +278,13 @@ export class ModeHandler implements vscode.Disposable, IModeHandler {
           if (!isSnippetSelectionChange()) {
             // if we just inserted a snippet then don't allow insert modes to go to visual mode
             allowedModes.push(Mode.Insert, Mode.Replace);
+          }
+          if (
+            this.vimState.currentMode === Mode.VisualLine &&
+            !ModeHandler.coversWholeLines(selection, e.textEditor.document)
+          ) {
+            // Because this selection holds only part of a line, Visual Line mode would act on more than it selects.
+            await this.setCurrentMode(Mode.Visual);
           }
           if (allowedModes.includes(this.vimState.currentMode)) {
             // Since the selections weren't ignored then probably we got change of selection from
