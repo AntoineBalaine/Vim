@@ -576,4 +576,61 @@ suite('Multicursor ex commands', () => {
       assert.deepStrictEqual(selectedTexts(), before);
     });
   });
+
+  suite('Pasting what several cursors yanked', () => {
+    const lines = ['l0 aaa', 'l1 bbb', 'l2 ccc', 'l3 ddd', 'END'];
+
+    const openWithCursors = async (cursorLines: number[]): Promise<void> => {
+      await setupWorkspace({ fileContent: lines });
+      modeHandler = (await getAndUpdateModeHandler())!;
+      vscode.window.activeTextEditor!.selections = cursorLines.map(
+        (line) => new vscode.Selection(new vscode.Position(line, 0), new vscode.Position(line, 0)),
+      );
+      for (let attempt = 0; attempt < 40; attempt++) {
+        if (modeHandler.vimState.cursors.length === cursorLines.length) {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      assert.fail('VSCodeVim did not create one cursor per selection');
+    };
+
+    test('yy then G then p pastes every yanked line, in the order of the cursors, when the cursors collapsed', async () => {
+      await openWithCursors([0, 1, 3]);
+      await modeHandler.handleMultipleKeyEvents(['y', 'y', 'G', 'p']);
+      assert.strictEqual(modeHandler.vimState.cursors.length, 1);
+      assertEqualLines([
+        'l0 aaa',
+        'l1 bbb',
+        'l2 ccc',
+        'l3 ddd',
+        'END',
+        'l0 aaa',
+        'l1 bbb',
+        'l3 ddd',
+      ]);
+    });
+
+    test('p with as many cursors as yanks still gives each cursor its own line', async () => {
+      await openWithCursors([0, 1, 3]);
+      await modeHandler.handleMultipleKeyEvents(['y', 'y', 'p']);
+      assertEqualLines([
+        'l0 aaa',
+        'l0 aaa',
+        'l1 bbb',
+        'l1 bbb',
+        'l2 ccc',
+        'l3 ddd',
+        'l3 ddd',
+        'END',
+      ]);
+    });
+
+    test('a single cursor that yanked one line pastes that line only', async () => {
+      await setupWorkspace({ fileContent: lines });
+      modeHandler = (await getAndUpdateModeHandler())!;
+      await modeHandler.handleMultipleKeyEvents(['g', 'g', 'y', 'y', 'G', 'p']);
+      assertEqualLines(['l0 aaa', 'l1 bbb', 'l2 ccc', 'l3 ddd', 'END', 'l0 aaa']);
+    });
+  });
 });

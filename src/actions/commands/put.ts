@@ -35,7 +35,11 @@ abstract class BasePutCommand extends BaseCommand {
   protected overwritesRegisterWithSelection = true;
 
   public override async exec(position: Position, vimState: VimState): Promise<void> {
-    const register = await Register.get(vimState.recordedState.registerName, this.multicursorIndex);
+    const register = await Register.getForPut(
+      vimState.recordedState.registerName,
+      vimState.cursors.length,
+      this.multicursorIndex,
+    );
     if (register === undefined) {
       StatusBar.displayError(
         vimState,

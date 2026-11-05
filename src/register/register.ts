@@ -289,6 +289,42 @@ export class Register {
   }
 
   /**
+   * Because the cursors of a yank each store their own text, and the cursors may have collapsed to one before the paste
+   * (for instance because `G` moved them all to the last line), the single cursor that remains would paste only the
+   * text of the first cursor. When the register holds several line-wise texts and only one cursor pastes, we give that
+   * cursor all of them, in the order of the cursors, as the lines of one line-wise text.
+   *
+   * @returns the content that the given cursor must paste
+   */
+  public static async getForPut(
+    register: string,
+    cursorCount: number,
+    multicursorIndex = 0,
+  ): Promise<IRegisterContent | undefined> {
+    const single = await Register.get(register, multicursorIndex);
+    if (cursorCount !== 1 || single === undefined) {
+      return single;
+    }
+
+    const entries = Register.registers.get(
+      Register.isClipboardRegister(register) ? register : register.toLowerCase(),
+    );
+    if (
+      !Array.isArray(entries) ||
+      entries.length < 2 ||
+      !entries.every(
+        (entry) => typeof entry.text === 'string' && entry.registerMode === RegisterMode.LineWise,
+      )
+    ) {
+      return single;
+    }
+    return {
+      text: entries.map((entry) => entry.text as string).join('\n'),
+      registerMode: RegisterMode.LineWise,
+    };
+  }
+
+  /**
    * @returns content of the given register
    *
    * NOTE: The clipboard register is silently converted to the unnamed register
