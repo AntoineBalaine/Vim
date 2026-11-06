@@ -13,6 +13,7 @@ import { ModeData } from '../mode/modeData';
 import { Logger } from '../util/logger';
 import { SearchDirection } from '../vimscript/pattern';
 import { HistoryTracker } from './../history/historyTracker';
+import { SelectionHistory } from './../history/selectionHistory';
 import { RegisterMode } from './../register/register';
 import { ReplaceState } from './../state/replaceState';
 import { globalState } from './globalState';
@@ -211,6 +212,11 @@ export class VimState implements vscode.Disposable {
     | undefined = undefined;
 
   /**
+   * Remembers the earlier selections of Visual mode, which `gv` loses when it stores a new one.
+   */
+  public readonly selectionHistory = new SelectionHistory();
+
+  /**
    * Because the marks `'<` and `'>` can describe only one region, we record here the region of
    * every selection whenever the command line is opened from Visual mode with several selections.
    * Ex commands such as `:s` then restrict their matches to these regions.
@@ -305,6 +311,11 @@ export class VimState implements vscode.Disposable {
     if (mode === undefined) {
       // TODO: remove this once we're sure this is no longer an issue (#6500, #6464)
       throw new Error('Tried setting currentMode to undefined');
+    }
+
+    if (isVisualMode(this.currentMode) && !isVisualMode(mode) && this.lastVisualSelection) {
+      // Because leaving Visual mode ends the selection, it goes into the history before another one replaces it for `gv`.
+      this.selectionHistory.push(this.lastVisualSelection);
     }
 
     await this.setModeData(

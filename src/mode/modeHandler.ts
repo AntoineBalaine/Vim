@@ -18,6 +18,7 @@ import { decoration } from '../configuration/decoration';
 import { isLiteralMode, remapKey } from '../configuration/langmap';
 import { Notation } from '../configuration/notation';
 import { Remappers } from '../configuration/remapper';
+import { snapshotOfSelection } from '../history/selectionHistory';
 import { Jump } from '../jumps/jump';
 import { globalState } from '../state/globalState';
 import { RemapState } from '../state/remapState';
@@ -208,6 +209,9 @@ export class ModeHandler implements vscode.Disposable, IModeHandler {
       return;
     }
     const selection = e.selections[0];
+    // Because a selection that comes from outside replaces the one that Visual mode shows, the one that is shown now has to be
+    // remembered before `lastVisualSelection` is overwritten, or it would be lost for good.
+    const wasVisual = isVisualMode(this.vimState.currentMode);
     Logger.debug(
       `Selection change: ${selection.anchor.toString()}, ${selection.active}, SelectionsLength: ${
         e.selections.length
@@ -258,6 +262,7 @@ export class ModeHandler implements vscode.Disposable, IModeHandler {
       }
       if (isVisualMode(this.vimState.currentMode)) {
         // Because these selections come from outside of our own actions, nothing else records them for `gv`.
+        this.rememberReplacedSelection(wasVisual);
         this.vimState.lastVisualSelection = this.createLastVisualSelection(
           this.vimState.currentMode,
         );
@@ -296,6 +301,7 @@ export class ModeHandler implements vscode.Disposable, IModeHandler {
               this.updateView({ drawSelection: false, revealRange: false });
 
               // Store selection for commands like gv
+              this.rememberReplacedSelection(wasVisual);
               this.vimState.lastVisualSelection = this.createLastVisualSelection(
                 this.vimState.currentMode,
               );
@@ -307,6 +313,7 @@ export class ModeHandler implements vscode.Disposable, IModeHandler {
               this.updateView({ drawSelection: false, revealRange: false });
 
               // Store selection for commands like gv
+              this.rememberReplacedSelection(wasVisual);
               this.vimState.lastVisualSelection = this.createLastVisualSelection(Mode.Visual);
               return;
             }
@@ -1683,24 +1690,18 @@ export class ModeHandler implements vscode.Disposable, IModeHandler {
   }
 
   createLastVisualSelection(mode: Mode.Visual | Mode.VisualLine | Mode.VisualBlock) {
-    const cursors = this.vimState.cursors;
-    const primaryCursor = this.vimState.cursor;
-    const multiCursorIndexSecondaryCursorMap: Map<number, Cursor> = new Map<number, Cursor>();
-    if (cursors.length > 1) {
-      for (let i = 0; i < cursors.length; i++) {
-        const cursor = cursors[i];
-        if (cursor === primaryCursor) {
-          continue;
-        }
-        multiCursorIndexSecondaryCursorMap.set(i, new Cursor(cursor.start, cursor.stop));
-      }
+    return snapshotOfSelection(this.vimState, mode);
+  }
+
+  /**
+   * Keeps the selection that Visual mode shows in the history, because a selection that comes from outside is about to replace it.
+   *
+   * @param wasVisual Whether the editor was in Visual mode before the selection changed
+   */
+  rememberReplacedSelection(wasVisual: boolean): void {
+    if (wasVisual && this.vimState.lastVisualSelection) {
+      this.vimState.selectionHistory.push(this.vimState.lastVisualSelection);
     }
-    return {
-      mode,
-      start: this.vimState.cursorStartPosition,
-      end: this.vimState.cursorStopPosition,
-      multiCursorIndexSecondaryCursorMap,
-    };
   }
 
   dispose() {
