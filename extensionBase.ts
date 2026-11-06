@@ -10,6 +10,7 @@ import { ModeHandler } from './src/mode/modeHandler';
 import { ModeHandlerMap } from './src/mode/modeHandlerMap';
 import { Register } from './src/register/register';
 import { CompositionState } from './src/state/compositionState';
+import { mapCursorsThroughChanges } from './src/state/dormantCursors';
 import { globalState } from './src/state/globalState';
 import { StatusBar } from './src/statusBar';
 import { taskQueue } from './src/taskQueue';
@@ -154,6 +155,17 @@ export async function activate(context: vscode.ExtensionContext, handleLocal: bo
     }
 
     const mh = ModeHandlerMap.get(event.document.uri);
+    if (mh && mh.vimState.dormantCursors.length > 0) {
+      // Because the dormant cursors are not in the editor, the extension moves them through the edit itself.
+      mh.vimState.dormantCursors = mapCursorsThroughChanges(
+        mh.vimState.dormantCursors,
+        event.contentChanges.map((change) => ({
+          start: change.range.start,
+          end: change.range.end,
+          text: change.text,
+        })),
+      );
+    }
     if (mh) {
       // Change from VSCode editor should set document.isDirty to true but they initially don't!
       // There is a timing issue in VSCode codebase between when the isDirty flag is set and

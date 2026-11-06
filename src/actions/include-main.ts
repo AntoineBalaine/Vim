@@ -6,6 +6,7 @@ import './operator';
 // commands
 import './commands/actions';
 import './commands/commandLine';
+import './commands/cursorFocus';
 import './commands/digraphs';
 import './commands/documentChange';
 import './commands/file';

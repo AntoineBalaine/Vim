@@ -217,6 +217,12 @@ export class VimState implements vscode.Disposable {
   public readonly selectionHistory = new SelectionHistory();
 
   /**
+   * The cursors that wait while another cursor has the focus. The editor shows only active cursors,
+   * so these ones are drawn by decorations until `g=` makes them active again.
+   */
+  public dormantCursors: Cursor[] = [];
+
+  /**
    * Because the marks `'<` and `'>` can describe only one region, we record here the region of
    * every selection whenever the command line is opened from Visual mode with several selections.
    * Ex commands such as `:s` then restrict their matches to these regions.

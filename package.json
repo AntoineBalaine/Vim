@@ -54,6 +54,48 @@
     "virtualWorkspaces": true
   },
   "contributes": {
+    "colors": [
+      {
+        "id": "vim.secondaryCursorBackground",
+        "description": "Background of the cursors that are not the main cursor, while several cursors are active.",
+        "defaults": {
+          "dark": "#4f8cff44",
+          "light": "#2f6cdf33",
+          "highContrast": "#4f8cff88",
+          "highContrastLight": "#2f6cdf66"
+        }
+      },
+      {
+        "id": "vim.secondaryCursorBorder",
+        "description": "Underline of the cursors that are not the main cursor, while several cursors are active.",
+        "defaults": {
+          "dark": "#4f8cff",
+          "light": "#2f6cdf",
+          "highContrast": "#4f8cff",
+          "highContrastLight": "#2f6cdf"
+        }
+      },
+      {
+        "id": "vim.dormantCursorBackground",
+        "description": "Background of the dormant cursors, which wait while another cursor has the focus with g) and g(.",
+        "defaults": {
+          "dark": "#50c87855",
+          "light": "#2e9e5a44",
+          "highContrast": "#50c87899",
+          "highContrastLight": "#2e9e5a77"
+        }
+      },
+      {
+        "id": "vim.dormantCursorBorder",
+        "description": "Border of the dormant cursors, which wait while another cursor has the focus with g) and g(.",
+        "defaults": {
+          "dark": "#50c878",
+          "light": "#2e9e5a",
+          "highContrast": "#50c878",
+          "highContrastLight": "#2e9e5a"
+        }
+      }
+    ],
     "commands": [
       {
         "command": "toggleVim",

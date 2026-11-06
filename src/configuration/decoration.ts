@@ -10,6 +10,8 @@ class DecorationImpl {
   private _easyMotionIncSearch!: vscode.TextEditorDecorationType;
   private _easyMotionDimIncSearch!: vscode.TextEditorDecorationType;
   private _insertModeVirtualCharacter!: vscode.TextEditorDecorationType;
+  private _secondaryCursor!: vscode.TextEditorDecorationType;
+  private _dormantCursor!: vscode.TextEditorDecorationType;
   private _operatorPendingModeCursor!: vscode.TextEditorDecorationType;
   private _operatorPendingModeCursorChar!: vscode.TextEditorDecorationType;
 
@@ -41,6 +43,34 @@ class DecorationImpl {
       gutterIconPath: uri,
       gutterIconSize: 'cover',
     });
+  }
+
+  /**
+   * The face of the cursors that are not the main one, while several cursors are active.
+   */
+  public set secondaryCursor(value: vscode.TextEditorDecorationType) {
+    if (this._secondaryCursor) {
+      this._secondaryCursor.dispose();
+    }
+    this._secondaryCursor = value;
+  }
+
+  public get secondaryCursor() {
+    return this._secondaryCursor;
+  }
+
+  /**
+   * The face of the cursors that wait while another cursor has the focus.
+   */
+  public set dormantCursor(value: vscode.TextEditorDecorationType) {
+    if (this._dormantCursor) {
+      this._dormantCursor.dispose();
+    }
+    this._dormantCursor = value;
+  }
+
+  public get dormantCursor() {
+    return this._dormantCursor;
   }
 
   public readonly confirmedSubstitution = vscode.window.createTextEditorDecorationType({
@@ -191,6 +221,22 @@ class DecorationImpl {
       },
       borderStyle: 'solid',
       borderWidth: '1px',
+    });
+
+    this.secondaryCursor = vscode.window.createTextEditorDecorationType({
+      backgroundColor: new vscode.ThemeColor('vim.secondaryCursorBackground'),
+      borderColor: new vscode.ThemeColor('vim.secondaryCursorBorder'),
+      borderStyle: 'solid',
+      borderWidth: '0 0 2px 0',
+    });
+
+    this.dormantCursor = vscode.window.createTextEditorDecorationType({
+      backgroundColor: new vscode.ThemeColor('vim.dormantCursorBackground'),
+      borderColor: new vscode.ThemeColor('vim.dormantCursorBorder'),
+      borderStyle: 'solid',
+      borderWidth: '1px',
+      overviewRulerColor: new vscode.ThemeColor('vim.dormantCursorBorder'),
+      overviewRulerLane: vscode.OverviewRulerLane.Right,
     });
 
     const searchHighlightBackgroundColor = configuration.searchHighlightColor

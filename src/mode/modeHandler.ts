@@ -1529,6 +1529,16 @@ export class ModeHandler implements vscode.Disposable, IModeHandler {
 
     this.vimState.editor.setDecorations(decoration.default, cursorRange);
 
+    // The cursors that are not the main one, and the dormant cursors, get faces of their own, so that the user sees which cursor is which.
+    this.vimState.editor.setDecorations(
+      decoration.secondaryCursor,
+      this.vimState.cursors.slice(1).map((cursor) => this.cursorFaceRange(cursor)),
+    );
+    this.vimState.editor.setDecorations(
+      decoration.dormantCursor,
+      this.vimState.dormantCursors.map((cursor) => this.cursorFaceRange(cursor)),
+    );
+
     // Insert Mode virtual characters: used to temporarily show the remapping pressed keys on
     // insert mode, to show the `"` character after pressing `<C-r>`, and to show `?` and the
     // first character when inserting digraphs with `<C-k>`.
@@ -1687,6 +1697,25 @@ export class ModeHandler implements vscode.Disposable, IModeHandler {
     if (!/\s+/.test(this.vimState.document.getText(range))) {
       void vscode.commands.executeCommand('editor.action.wordHighlight.trigger');
     }
+  }
+
+  /**
+   * The range that a cursor face covers: the character under a cursor, or the whole text of a selection.
+   * Because a cursor at the end of a line has no character, its range is one character wide at the end of the line.
+   */
+  cursorFaceRange(cursor: Cursor): vscode.Range {
+    const document = this.vimState.document;
+    const first = cursor.start.isBefore(cursor.stop) ? cursor.start : cursor.stop;
+    const last = cursor.start.isBefore(cursor.stop) ? cursor.stop : cursor.start;
+    const from = document.validatePosition(first);
+    const to = document.validatePosition(last);
+    if (from.isEqual(to)) {
+      const lineEnd = document.lineAt(to.line).range.end;
+      return to.isEqual(lineEnd)
+        ? new vscode.Range(to.getLeft(), to)
+        : new vscode.Range(to, to.getRight());
+    }
+    return new vscode.Range(from, document.validatePosition(to.getRight()));
   }
 
   createLastVisualSelection(mode: Mode.Visual | Mode.VisualLine | Mode.VisualBlock) {

@@ -159,8 +159,10 @@ class CommandEsc extends BaseCommand {
     if (vimState.currentMode === Mode.Normal) {
       vimState.surround = undefined;
 
-      if (vimState.isMultiCursor) {
+      if (vimState.isMultiCursor || vimState.dormantCursors.length > 0) {
+        // Because the dormant cursors are cursors too, <Esc> drops them together with the secondary cursors.
         vimState.cursors = [vimState.cursor];
+        vimState.dormantCursors = [];
       } else {
         // If there's nothing to do on the vim side, we might as well call some
         // of vscode's default "close notification" actions. I think we should
