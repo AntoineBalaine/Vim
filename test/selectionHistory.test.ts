@@ -122,6 +122,22 @@ suite('Selection history', () => {
     });
 
     newTest({
+      title: '`<C-o>` goes back through the selections in Visual mode, like the jump list',
+      start: ['|one two three'],
+      keysPressed: 've' + '<Esc>' + 'w' + 've' + '<Esc>' + 'g<' + '<C-o>' + 'd',
+      end: ['| two three'],
+      endMode: Mode.Normal,
+    });
+
+    newTest({
+      title: '`<C-i>` goes forward through the selections in Visual mode',
+      start: ['|one two three'],
+      keysPressed: 've' + '<Esc>' + 'w' + 've' + '<Esc>' + 'g<' + '<C-o>' + '<C-i>' + 'd',
+      end: ['one | three'],
+      endMode: Mode.Normal,
+    });
+
+    newTest({
       title: '`g<` with no earlier selection does nothing',
       start: ['|one two three'],
       keysPressed: 'g<',

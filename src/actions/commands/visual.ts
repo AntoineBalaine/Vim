@@ -238,3 +238,22 @@ class SelectionHistoryForward extends BaseCommand {
     }
   }
 }
+
+/**
+ * Goes back in the history of selections with `<C-o>` in Visual mode, where the jump list has nothing to jump to.
+ * In Normal mode `<C-o>` stays the jump list, so the history is the jump list of the selections.
+ */
+@RegisterAction
+class VisualSelectionHistoryBack extends SelectionHistoryBack {
+  override modes = [Mode.Visual, Mode.VisualLine, Mode.VisualBlock];
+  override keys = ['<C-o>'];
+}
+
+/**
+ * Goes forward in the history of selections with `<C-i>` in Visual mode.
+ */
+@RegisterAction
+class VisualSelectionHistoryForward extends SelectionHistoryForward {
+  override modes = [Mode.Visual, Mode.VisualLine, Mode.VisualBlock];
+  override keys = ['<C-i>'];
+}
