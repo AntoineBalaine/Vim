@@ -1,5 +1,7 @@
 import { Position } from 'vscode';
 import { Cursor } from '../common/motion/cursor';
+import { Mode } from '../mode/mode';
+import type { VimState } from './vimState';
 
 /**
  * One change of a document, with the coordinates of the text before the change.
@@ -73,15 +75,17 @@ export interface CursorFocus {
 }
 
 /**
- * Moves the focus along the ring of all the cursors, in the order of the document.
- * Because the editor can only show active cursors, the cursor that has the focus is the only active one,
- * and every other cursor becomes dormant until the focus reaches it or until all of them are restored.
+ * Makes another cursor the main one, moving along the ring of all the cursors in the order of the document.
+ *
+ * Without dormant cursors, every cursor stays active and only the main one changes, as the keys ( and ) of Kakoune do.
+ * With dormant cursors, the editor can only show active cursors, so the cursor that becomes the main one is the only active one,
+ * and every other cursor stays dormant until all of them are restored.
  *
  * @param active The active cursors, of which the first one is the main cursor
  * @param dormant The cursors that wait without being active
- * @param steps How many cursors to move the focus, forward when positive and backward when negative
+ * @param steps How many cursors to move, forward when positive and backward when negative
  */
-export function cycleFocus(
+export function cycleMain(
   active: readonly Cursor[],
   dormant: readonly Cursor[],
   steps: number,
@@ -93,14 +97,22 @@ export function cycleFocus(
   const found = ring.findIndex((cursor) => cursor.equals(active[0]));
   const from = found === -1 ? 0 : found;
   const target = (((from + steps) % ring.length) + ring.length) % ring.length;
-  return {
-    active: [ring[target]],
-    dormant: ring.filter((_, index) => index !== target),
-  };
+  const others = ring.filter((_, index) => index !== target);
+  if (dormant.length === 0) {
+    return { active: [ring[target], ...others], dormant: [] };
+  }
+  return { active: [ring[target]], dormant: others };
 }
 
 /**
- * Makes every dormant cursor active again. The cursor that has the focus stays the main one.
+ * Puts every cursor except the main one to sleep, so that the main cursor is the only one that edits.
+ */
+export function makeSecondariesDormant(active: readonly Cursor[]): CursorFocus {
+  return { active: active.slice(0, 1), dormant: inDocumentOrder(active.slice(1)) };
+}
+
+/**
+ * Makes every dormant cursor active again. The main cursor stays the main one.
  */
 export function restoreAll(active: readonly Cursor[], dormant: readonly Cursor[]): Cursor[] {
   const main = active[0];
@@ -108,4 +120,18 @@ export function restoreAll(active: readonly Cursor[], dormant: readonly Cursor[]
     (cursor) => main === undefined || !cursor.equals(main),
   );
   return main === undefined ? others : [main, ...others];
+}
+
+/**
+ * Tells whether the keys ( and ) cycle the cursors and not the sentences. They do while there are several cursors
+ * in a mode that moves the cursors, so that with one cursor they keep moving by sentence as they do in Vim.
+ */
+export function cyclesCursors(vimState: VimState): boolean {
+  const hasSeveralCursors = vimState.cursors.length > 1 || vimState.dormantCursors.length > 0;
+  const isOperatorPending = vimState.currentModeIncludingPseudoModes === Mode.OperatorPendingMode;
+  return (
+    hasSeveralCursors &&
+    !isOperatorPending &&
+    [Mode.Normal, Mode.Visual, Mode.VisualLine].includes(vimState.currentMode)
+  );
 }

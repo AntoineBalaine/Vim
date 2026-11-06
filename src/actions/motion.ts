@@ -17,6 +17,7 @@ import { TagMatcher } from './../common/matching/tagMatcher';
 import { configuration } from './../configuration/configuration';
 import { isVisualMode, Mode } from './../mode/mode';
 import { RegisterMode } from './../register/register';
+import { cyclesCursors } from './../state/dormantCursors';
 import { VimState } from './../state/vimState';
 import { CursorMoveByUnit, CursorMovePosition, TextEditor } from './../textEditor';
 import { RegisterAction } from './base';
@@ -1590,6 +1591,11 @@ class MovePreviousSentenceBegin extends BaseMovement {
   keys = ['('];
   override isJump = true;
 
+  // Because ( and ) cycle the cursors while there are several of them, the sentence motion yields to them.
+  public override doesActionApply(vimState: VimState, keysPressed: string[]): boolean {
+    return !cyclesCursors(vimState) && super.doesActionApply(vimState, keysPressed);
+  }
+
   public override async execAction(position: Position, vimState: VimState): Promise<Position> {
     return position.getSentenceBegin({ forward: false });
   }
@@ -1610,6 +1616,11 @@ class GoToOffset extends BaseMovement {
 class MoveNextSentenceBegin extends BaseMovement {
   keys = [')'];
   override isJump = true;
+
+  // Because ( and ) cycle the cursors while there are several of them, the sentence motion yields to them.
+  public override doesActionApply(vimState: VimState, keysPressed: string[]): boolean {
+    return !cyclesCursors(vimState) && super.doesActionApply(vimState, keysPressed);
+  }
 
   public override async execAction(position: Position, vimState: VimState): Promise<Position> {
     return position.getSentenceBegin({ forward: true });

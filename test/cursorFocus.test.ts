@@ -3,8 +3,9 @@ import { Position } from 'vscode';
 import { Cursor } from '../src/common/motion/cursor';
 import {
   DormantTextChange,
-  cycleFocus,
+  cycleMain,
   inDocumentOrder,
+  makeSecondariesDormant,
   mapCursorsThroughChanges,
   mapPositionThroughChange,
   restoreAll,
@@ -24,47 +25,56 @@ function insertion(line: number, character: number, text: string): DormantTextCh
   return { start: position, end: position, text };
 }
 
-suite('Cursor focus', () => {
+suite('Cursor cycling', () => {
   suite('Ring of cursors', () => {
-    test('Moves the focus to the next cursor and leaves the others dormant', () => {
-      const focus = cycleFocus([at(0, 0), at(1, 0), at(2, 0)], [], 1);
+    test('Makes the next cursor the main one and keeps every cursor active', () => {
+      const focus = cycleMain([at(0, 0), at(1, 0), at(2, 0)], [], 1);
+      assert.deepEqual(lines(focus.active), [1, 0, 2]);
+      assert.equal(focus.dormant.length, 0);
+    });
+
+    test('Wraps around at both ends of the document', () => {
+      assert.deepEqual(lines(cycleMain([at(2, 0), at(0, 0), at(1, 0)], [], 1).active)[0], 0);
+      assert.deepEqual(lines(cycleMain([at(0, 0), at(1, 0), at(2, 0)], [], -1).active)[0], 2);
+    });
+
+    test('Moves several cursors with a count', () => {
+      assert.equal(
+        cycleMain([at(0, 0), at(1, 0), at(2, 0), at(3, 0)], [], 2).active[0].stop.line,
+        2,
+      );
+    });
+
+    test('Follows the order of the document, whatever the order that the cursors were added in', () => {
+      assert.equal(cycleMain([at(2, 0), at(0, 0), at(1, 0)], [], 1).active[0].stop.line, 0);
+    });
+
+    test('With dormant cursors, the new main cursor is the only active one', () => {
+      const focus = cycleMain([at(0, 0)], [at(1, 0), at(2, 0)], 1);
       assert.deepEqual(lines(focus.active), [1]);
       assert.deepEqual(lines(focus.dormant), [0, 2]);
     });
 
-    test('Wraps around at both ends of the document', () => {
-      const forward = cycleFocus([at(2, 0)], [at(0, 0), at(1, 0)], 1);
-      assert.deepEqual(lines(forward.active), [0]);
-      const backward = cycleFocus([at(0, 0)], [at(1, 0), at(2, 0)], -1);
-      assert.deepEqual(lines(backward.active), [2]);
-    });
-
-    test('Moves several cursors with a count', () => {
-      const focus = cycleFocus([at(0, 0)], [at(1, 0), at(2, 0), at(3, 0)], 2);
-      assert.deepEqual(lines(focus.active), [2]);
-      assert.equal(focus.dormant.length, 3);
-    });
-
-    test('Follows the order of the document, whatever the order that the cursors were added in', () => {
-      const focus = cycleFocus([at(2, 0)], [at(0, 0), at(1, 0)], 1);
-      assert.deepEqual(lines(focus.active), [0]);
-    });
-
-    test('Takes the active cursors that were added during the focus into the ring', () => {
-      const focus = cycleFocus([at(1, 0), at(4, 0)], [at(0, 0)], 1);
+    test('With dormant cursors, takes the active cursors that were added meanwhile into the ring', () => {
+      const focus = cycleMain([at(1, 0), at(4, 0)], [at(0, 0)], 1);
       assert.deepEqual(lines(focus.active), [4]);
       assert.deepEqual(lines(focus.dormant), [0, 1]);
     });
 
     test('Does nothing with a single cursor', () => {
-      const focus = cycleFocus([at(1, 0)], [], 1);
+      const focus = cycleMain([at(1, 0)], [], 1);
       assert.deepEqual(lines(focus.active), [1]);
       assert.equal(focus.dormant.length, 0);
     });
 
-    test('Restores every cursor, with the focused cursor as the main one', () => {
-      const restored = restoreAll([at(1, 0)], [at(0, 0), at(2, 0)]);
-      assert.deepEqual(lines(restored), [1, 0, 2]);
+    test('Puts every cursor except the main one to sleep', () => {
+      const focus = makeSecondariesDormant([at(1, 0), at(0, 0), at(2, 0)]);
+      assert.deepEqual(lines(focus.active), [1]);
+      assert.deepEqual(lines(focus.dormant), [0, 2]);
+    });
+
+    test('Restores every cursor, with the main cursor first', () => {
+      assert.deepEqual(lines(restoreAll([at(1, 0)], [at(0, 0), at(2, 0)])), [1, 0, 2]);
     });
 
     test('Keeps one cursor of two equal ones', () => {
@@ -115,41 +125,40 @@ suite('Cursor focus', () => {
     });
   });
 
-  suite('g) g( and g= in the editor', () => {
+  suite('( ) gv and <Esc> in the editor', () => {
     newTest({
-      title:
-        '`g)` moves the focus, so that an edit changes one cursor, and `g=` brings the others back',
+      title: '`)` makes the next cursor the main one, and every cursor keeps editing',
       start: ['|one', '|two', '|three'],
-      keysPressed: 'g)' + 'A!' + '<Esc>' + 'g=' + 'A?' + '<Esc>',
-      end: ['one|?', 'two!|?', 'three|?'],
+      keysPressed: ')' + 'A!' + '<Esc>',
+      end: ['one|!', 'two|!', 'three|!'],
     });
 
     newTest({
-      title: '`g(` moves the focus backward, wrapping to the last cursor',
+      title: '`gv` in Visual mode puts the secondary selections to sleep, and <Esc> wakes them up',
       start: ['|one', '|two', '|three'],
-      keysPressed: 'g(' + 'A!' + '<Esc>' + 'g=',
-      end: ['|one', '|two', 'three|!'],
+      keysPressed: 'vl' + 'gv' + 'd' + '<Esc>',
+      end: ['|e', '|two', '|three'],
     });
 
     newTest({
-      title: 'A count moves the focus several cursors',
+      title: 'While the others sleep, `)` gives the editing to the next cursor alone',
       start: ['|one', '|two', '|three'],
-      keysPressed: '2g)' + 'A!' + '<Esc>' + 'g=',
-      end: ['|one', '|two', 'three|!'],
+      keysPressed: 'v' + 'gv' + ')' + 'd' + '<Esc>',
+      end: ['|one', '|wo', '|three'],
     });
 
     newTest({
-      title: 'The dormant cursors follow the text when the focused cursor adds a line above them',
+      title: 'The sleeping cursors follow the text when the main cursor adds a line above them',
       start: ['|one', '|two', '|three'],
-      keysPressed: '3g)' + 'ox' + '<Esc>' + 'g=' + 'A!' + '<Esc>',
-      end: ['one', 'x|!', 'two|!', 'three|!'],
+      keysPressed: 'v' + 'gv' + 'c' + 'x\ny' + '<Esc>' + '<Esc>',
+      end: ['x', '|yne', '|two', '|three'],
     });
 
     newTest({
-      title: '<Esc> drops the dormant cursors',
-      start: ['|one', '|two', '|three'],
-      keysPressed: 'g)' + '<Esc>' + 'A!' + '<Esc>',
-      end: ['one', 'two|!', 'three'],
+      title: 'With one cursor, `)` is still the next sentence',
+      start: ['|One. Two. Three.'],
+      keysPressed: ')',
+      end: ['One. |Two. Three.'],
     });
   });
 });

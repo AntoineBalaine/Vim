@@ -1,64 +1,74 @@
 import { Position } from 'vscode';
 import { Mode } from '../../mode/mode';
-import { cycleFocus, restoreAll } from '../../state/dormantCursors';
+import { cycleMain, cyclesCursors, makeSecondariesDormant } from '../../state/dormantCursors';
 import { VimState } from '../../state/vimState';
 import { BaseCommand, RegisterAction } from '../base';
 
 /**
- * Moves the focus to another cursor, so that an edit changes that cursor alone. Kakoune has a plugin for it, phantom-selection.
- * The other cursors stay in the editor as dormant cursors, drawn with their own colors, until `g=` makes them active again.
+ * Makes another cursor the main one. Without dormant cursors every cursor stays active, as with ( and ) in Kakoune.
+ * With dormant cursors, the main cursor is the only active one, as with the phantom-selection plugin of Kakoune.
  */
-async function moveFocus(vimState: VimState, direction: 1 | -1): Promise<void> {
+async function cycle(vimState: VimState, direction: 1 | -1): Promise<void> {
   const steps = Math.max(vimState.recordedState.count, 1) * direction;
-  const focus = cycleFocus(vimState.cursors, vimState.dormantCursors, steps);
+  const focus = cycleMain(vimState.cursors, vimState.dormantCursors, steps);
   vimState.dormantCursors = focus.dormant;
   vimState.cursors = focus.active;
 }
 
 @RegisterAction
-class FocusNextCursor extends BaseCommand {
+class MainCursorNext extends BaseCommand {
   modes = [Mode.Normal, Mode.Visual, Mode.VisualLine];
-  keys = ['g', ')'];
+  keys = [')'];
 
-  // Because the focus moves for all the cursors at once, the command runs once and not once for every cursor.
+  // Because the cursors move together, the command runs once and not once for every cursor.
   override runsOnceForEveryCursor() {
     return false;
   }
 
+  // Because ) is also the next sentence, it cycles the cursors only while there are several of them.
+  public override doesActionApply(vimState: VimState, keysPressed: string[]): boolean {
+    return cyclesCursors(vimState) && super.doesActionApply(vimState, keysPressed);
+  }
+
   public override async exec(position: Position, vimState: VimState): Promise<void> {
-    await moveFocus(vimState, 1);
+    await cycle(vimState, 1);
   }
 }
 
 @RegisterAction
-class FocusPreviousCursor extends BaseCommand {
+class MainCursorPrevious extends BaseCommand {
   modes = [Mode.Normal, Mode.Visual, Mode.VisualLine];
-  keys = ['g', '('];
+  keys = ['('];
 
   override runsOnceForEveryCursor() {
     return false;
   }
 
+  public override doesActionApply(vimState: VimState, keysPressed: string[]): boolean {
+    return cyclesCursors(vimState) && super.doesActionApply(vimState, keysPressed);
+  }
+
   public override async exec(position: Position, vimState: VimState): Promise<void> {
-    await moveFocus(vimState, -1);
+    await cycle(vimState, -1);
   }
 }
 
+/**
+ * Puts every selection except the main one to sleep with `gv` in Visual mode. <Esc> wakes them up again,
+ * so that the time in between works like a sub-mode in which an edit changes only the main selection.
+ */
 @RegisterAction
-class RestoreDormantCursors extends BaseCommand {
-  modes = [Mode.Normal, Mode.Visual, Mode.VisualLine];
-  keys = ['g', '='];
+class SleepSecondarySelections extends BaseCommand {
+  modes = [Mode.Visual, Mode.VisualLine];
+  keys = ['g', 'v'];
 
   override runsOnceForEveryCursor() {
     return false;
   }
 
   public override async exec(position: Position, vimState: VimState): Promise<void> {
-    if (vimState.dormantCursors.length === 0) {
-      return;
-    }
-    const cursors = restoreAll(vimState.cursors, vimState.dormantCursors);
-    vimState.dormantCursors = [];
-    vimState.cursors = cursors;
+    const focus = makeSecondariesDormant(vimState.cursors);
+    vimState.dormantCursors = [...vimState.dormantCursors, ...focus.dormant];
+    vimState.cursors = focus.active;
   }
 }

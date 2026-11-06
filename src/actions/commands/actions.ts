@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { Position } from 'vscode';
 import { Cursor } from '../../common/motion/cursor';
 import { VimError } from '../../error';
+import { restoreAll } from '../../state/dormantCursors';
 import { globalState } from '../../state/globalState';
 import { VimState } from '../../state/vimState';
 import { StatusBar } from '../../statusBar';
@@ -156,13 +157,22 @@ class CommandEsc extends BaseCommand {
   override preservesDesiredColumn = true;
 
   public override async exec(position: Position, vimState: VimState): Promise<void> {
+    if (vimState.dormantCursors.length > 0 && vimState.currentMode !== Mode.SurroundInputMode) {
+      // Because the dormant cursors are asleep in a sub-mode that `gv` began, the first <Esc> wakes them up and keeps the mode.
+      // Because a mode other than Visual has no selected text, the cursors that were selections wake up as carets there.
+      const woken = restoreAll(vimState.cursors, vimState.dormantCursors);
+      vimState.cursors = isVisualMode(vimState.currentMode)
+        ? woken
+        : [woken[0], ...woken.slice(1).map((cursor) => Cursor.atPosition(cursor.start))];
+      vimState.dormantCursors = [];
+      return;
+    }
+
     if (vimState.currentMode === Mode.Normal) {
       vimState.surround = undefined;
 
-      if (vimState.isMultiCursor || vimState.dormantCursors.length > 0) {
-        // Because the dormant cursors are cursors too, <Esc> drops them together with the secondary cursors.
+      if (vimState.isMultiCursor) {
         vimState.cursors = [vimState.cursor];
-        vimState.dormantCursors = [];
       } else {
         // If there's nothing to do on the vim side, we might as well call some
         // of vscode's default "close notification" actions. I think we should
